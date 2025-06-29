@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>オーブ検索ツール</title>
+    <style>
+        /* 
+         * 以下のCSSは、ソースに含まれる情報ではありませんが、
+         * HTML文書の視認性と使いやすさを向上させるために追加しました。
+         * これらのスタイルは、実際のアプリケーションの動作には必須ではありません。
+         */
+        body { 
+            font-family: sans-serif; 
+            margin: 20px; 
+            background-color: #f4f4f4; 
+            color: #333; 
+        }
+        h1, h3 { 
+            color: #0056b3; 
+        }
+        input[type="text"], input[type="number"], button {
+            padding: 8px;
+            margin: 5px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            cursor: pointer;
+            border: none;
+            transition: background-color 0.3s ease;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .card-display {
+            background-color: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .card-display img {
+            max-width: 120px;
+            height: auto;
+            display: block;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .status-info {
+            background-color: #f9f9f9;
+            border: 1px solid #eee;
+            padding: 8px;
+            margin-top: 10px;
+            border-radius: 4px;
+        }
+        .skill-section h4 {
+            margin-top: 15px;
+            margin-bottom: 5px;
+            color: #28a745;
+        }
+        .skill-item {
+            border: 1px dashed #c3e6cb;
+            background-color: #e2f9e6;
+            padding: 8px;
+            margin-bottom: 5px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .skill-item img {
+            width: 24px;
+            height: 24px;
+            vertical-align: middle;
+        }
+        /* スキル種類に応じた追加スタイル（例） */
+        /* .zenei_skill {} 
+        .kouei_skill {} 
+        .tokusei_skill {} */
+    </style>
+</head>
+<body>
+
+    <!--
+     * 「オーブ検索機」のタイトルが表示される部分です。
+     * JavaScriptがこの要素のinnerHTMLを「*オーブ検索機*」に設定します [1, 2]。
+     -->
+    <div id="sakusen2"></div>
+
+    <div>
+        <h3>カード名で検索:</h3>
+        <!-- カード名を入力するテキストフィールド [2] -->
+        <input type="text" id="sakusen2_text" placeholder="カード名を入力">
+        <!-- カード名検索を実行するボタン [2] -->
+        <button id="sakusen2_button">検索</button>
+    </div>
+
+    <div style="margin-top: 20px;">
+        <h3>スキルで検索:</h3>
+        <!-- スキル名や属性を入力するテキストフィールド [3] -->
+        <input type="text" id="sakusen2_skill_text" placeholder="スキル名または属性=値 (例: label=攻撃)">
+        <!-- スキル検索を実行するボタン [3] -->
+        <button id="sakusen2_skill_button">スキル検索</button>
+    </div>
+
+    <!-- 
+     * 検索結果のカード情報が表示されるコンテナです。
+     * JavaScriptによって動的に内容が生成・追加されます [4]。
+     -->
+    <div id="sakusen2_result" style="margin-top: 30px;"></div>
+
+    <script>
+        // 提供されたJavaScriptのコード全体をここに含めます。
+        // このコードは、必要なデータをフェッチし、HTML要素を操作して
+        // オーブ検索ツールを機能させます。
+        (() => {
+            let c = []; // カードデータを格納 [5]
+            let s = []; // スキルデータを格納 [5]
+            let cs = []; // カードとスキルの関連データを格納 [6]
+            let ic = []; // アイコンデータを格納 [6]
+            let clc = []; // 限界突破スキルデータを格納 [6]
+
+            // ランダムなハッシュを生成し、データ取得に使用 [1]
+            const hash = btoa(Math.random().toString(36).slice(-3));
+
+            // レアリティの表示文字列 [1]
+            const rare = ["", "N", "R", "SR", "UR", "LG"];
+
+            // スキル種類の表示文字列 [1]
+            const skill_kind = [
+                "", "前衛攻撃", "前衛魔法", "前衛回復", "後衛攻撃", "後衛遠距離", "後衛応援", "魔＆攻",
+                "", "", "共通特性", "前衛特性", "後衛特性"
+            ];
+
+            // 検索機タイトル用の文字列 [1]
+            const test = `*オーブ検索機*`.replace(/\n/g, "");
+
+            // 検索関数 [1]
+            const search = (f) => {
+                sakusen2_result.innerHTML = ""; // 既存の検索結果をクリア [1]
+                let row = 0; // 表示行数をカウント [1]
+                c.forEach((val) => { // カードデータ「c」をループ [1]
+                    if (row < 50 && val.evol_step == 1 && f(val)) { // 最初の進化段階のカードでフィルターし、最大50件表示 [1]
+                        row++;
+
+                        val.skills = getCardSkills(val.id); // カードのスキルを取得 [4]
+                        const limitbreak = getCardLimitbreakSkills(val.id); // カードの限界突破スキルを取得 [4]
+                        let evols = [val]; // 現在の進化段階の配列 [4]
+                        let evol_step = 0; // 現在選択中の進化段階（0から開始） [4]
+                        let lv = 1; // 現在のレベル [4]
+                        console.log(evols); // デバッグ用ログ [4]
+
+                        // 最大進化段階までのカードデータを取得 [4]
+                        while (evols[evols.length - 1].evol_step < val.max_evol_step) {
+                            let next_card = getCard(evols[evols.length - 1].next_card_id);
+                            next_card.skills = getCardSkills(next_card.id);
+                            evols.push(next_card);
+                        }
+
+                        // 各カードの表示用HTMLを動的に生成し、結果エリアに追加 [4]
+                        sakusen2_result.innerHTML += `
+                            <div id="id${val.id}" class="card-display">
+                                <b id="card_name_${val.id}">*${rare[val.rarity]}${val.cost} ${val.label}*</b>
+                                <img src="" alt="カード画像" class="card-image">
+                                <div id="lv_${val.id}">Lv.${lv}</div>
+                                <input type="number" id="lv_input_${val.id}" min="1" value="1">
+                                <div>
+                                    <button id="evol1_${val.id}">進化1</button>
+                                    <button id="evol2_${val.id}">進化2</button>
+                                    <button id="evol3_${val.id}">進化3</button>
+                                    <button id="evol4_${val.id}">進化4</button>
+                                </div>
+                                <div id="status_${val.id}" class="status-info"></div>
+                                <div class="skill-section">
+                                    <h4>スキル:</h4>
+                                    <div id="skills_${val.id}"></div>
+                                </div>
+                            </div>
+                        `;
+
+                        // カード情報（ステータス、スキルなど）を更新する関数 [4]
+                        const update = () => {
+                            const card = evols[evol_step]; // 現在の進化段階のカードデータ [7]
+                            lv = Math.min(card.pre_max_level, lv); // レベルを最大レベル以下に制限 [7]
+                            const image_num = ('00000' + card.image_number).slice(-5); // 画像番号を5桁に整形 [7]
+
+                            document.querySelector(`#skills_${val.id}`).innerHTML = ""; // スキル表示エリアをクリア [7]
+
+                            let assault_atk; // 物攻 [7]
+                            let assault_dfn; // 物防 [7]
+                            let magic_atk; // 魔攻 [7]
+                            let magic_dfn; // 魔防 [7]
+
+                            // レベルに応じたステータス計算 [7, 8]
+                            if (lv > 1) {
+                                assault_atk = card.base_assault_atk + card.up1_assault_atk * lv;
+                                assault_dfn = card.base_assault_dfn + card.up1_assault_dfn * lv;
+                                magic_atk = card.base_magic_atk + card.up1_magic_atk * lv;
+                                magic_dfn = card.base_magic_dfn + card.up1_magic_dfn * lv;
+                            } else {
+                                assault_atk = card.base_assault_atk;
+                                assault_dfn = card.base_assault_dfn;
+                                magic_atk = card.base_magic_atk;
+                                magic_dfn = card.base_magic_dfn;
+                            }
+
+                            // 進化段階ごとの追加ステータスを適用 [8]
+                            for (let i = 0; i <= evol_step; i++) {
+                                assault_atk += evols[i].evolution_up;
+                                assault_dfn += evols[i].evolution_up;
+                                magic_atk += evols[i].evolution_up;
+                                magic_dfn += evols[i].evolution_up;
+
+                                // スキル情報を表示 [8]
+                                evols[i].skills.forEach((skill) => {
+                                    const icon_id = getIconId(skill.icon_id);
+                                    const skill_icon = `<img src="https://asset.nekodora.jp/icon/${icon_id}.png" alt="スキルアイコン">`; // スキルアイコンの画像URLを生成 [8]
+                                    const higi = `秘技`;
+                                    let skill_type = "zenei_skill"; // スキルタイプを判別 [9]
+                                    if (10 <= skill.kind) {
+                                        skill_type = "tokusei_skill";
+                                    } else if (4 <= skill.kind && skill.kind <= 6) {
+                                        skill_type = "kouei_skill";
+                                    }
+
+                                    // 継承枠または通常スキルを表示 [9]
+                                    if (skill.skill_action_name == "noop") {
+                                        const keisho_kind = { 1: "前衛継承枠", 4: "後衛継承枠", 10: "特性継承枠" };
+                                        document.querySelector(`#skills_${val.id}`).innerHTML += `
+                                            <div class="skill-item ${skill_type}">${keisho_kind[skill.kind]}</div>
+                                        `;
+                                    } else {
+                                        document.querySelector(`#skills_${val.id}`).innerHTML += `
+                                            <div class="skill-item ${skill_type}">
+                                                ${i == card.max_evol_step-1 ? higi: ""}
+                                                ${skill_icon}
+                                                ${skill_kind[skill.kind]} ${skill.label}
+                                                <br>コスト:${skill.cost} 消費AP:${skill.ap} 使用回数:${skill.available_num}回
+                                                <div>${skill.text}</div>
+                                            </div>
+                                        `; [9, 10]
+                                    }
+                                });
+                            }
+
+                            // 最終進化段階の場合、最大ステータスと限界突破スキルを表示 [10]
+                            if (card.evol_step == card.max_evol_step) {
+                                if (lv == card.pre_max_level) { // 最大レベルの場合、最終ステータスを適用 [10]
+                                    assault_atk = card.max_assault_atk;
+                                    assault_dfn = card.max_assault_dfn;
+                                    magic_atk = card.max_magic_atk;
+                                    magic_dfn = card.max_magic_dfn;
+                                }
+
+                                limitbreak.forEach((lc) => { // 限界突破スキルを表示 [10]
+                                    const icon_id = getIconId(lc.skill.icon_id);
+                                    const skill_icon = `<img src="https://asset.nekodora.jp/icon/${icon_id}.png" alt="限界突破アイコン">`; // 限界突破スキルアイコンの画像URLを生成 [10]
+                                    let skill_type = "zenei_skill"; // スキルタイプを判別 [10, 11]
+                                    if (10 <= lc.skill.kind) {
+                                        skill_type = "tokusei_skill";
+                                    } else if (4 <= lc.skill.kind) {
+                                        skill_type = "kouei_skill";
+                                    }
+
+                                    // 限界突破継承枠または通常限界突破スキルを表示 [11]
+                                    if (lc.skill.skill_action_name == "noop") {
+                                        const keisho_kind = { 1: "前衛継承枠", 4: "後衛継承枠", 10: "特性継承枠" };
+                                        document.querySelector(`#skills_${val.id}`).innerHTML += `
+                                            <div class="skill-item ${skill_type}">突破${lc.step}${keisho_kind[lc.skill.kind]}</div>
+                                        `;
+                                    } else {
+                                        document.querySelector(`#skills_${val.id}`).innerHTML += `
+                                            <div class="skill-item ${skill_type}">
+                                                突破${lc.step}
+                                                ${skill_icon}
+                                                ${skill_kind[lc.skill.kind]} ${lc.skill.label}
+                                                <br>コスト:${lc.skill.cost} 消費AP:${lc.skill.ap} 使用回数:${lc.skill.available_num}回
+                                                <div>${lc.skill.text}</div>
+                                            </div>
+                                        `; [11]
+                                    }
+                                });
+                            }
+
+                            // カードの基本情報を更新 [11, 12]
+                            document.querySelector(`#id${val.id}>b`).innerHTML = `*${rare[card.rarity]}${card.cost} ${card.label}*`;
+                            document.querySelector(`#id${val.id} img`).src = `https://asset.nekodora.jp/chara/${image_num}_${card.image_evol_step}_01/${image_num}_${card.image_evol_step}_combined.png`;
+                            document.querySelector(`#lv_${val.id}`).innerHTML = `Lv.${lv}`;
+                            document.querySelector(`#lv_input_${val.id}`).max = card.pre_max_level;
+                            document.querySelector(`#status_${val.id}`).innerHTML = `
+                                物攻:${Math.round(assault_atk)} 物防:${Math.round(assault_dfn)}<br>
+                                魔攻:${Math.round(magic_atk)} 魔防:${Math.round(magic_dfn)}`;
+                        };
+
+                        // タイムアウト後、初期表示とイベントリスナーを設定 [13]
+                        setTimeout(() => {
+                            update(); // 初回更新 [13]
+
+                            // カードの最大進化段階に応じて、不要な進化ボタンを非表示にする
+                            for(let i = val.max_evol_step; i < 4; i++) {
+                                const btn = document.querySelector(`#evol${i+1}_${val.id}`);
+                                if(btn) btn.style.display = 'none'; // ボタンが存在すれば非表示に
+                            }
+
+                            // 各進化ボタンのイベントリスナーを設定 [13]
+                            document.querySelector(`#evol1_${val.id}`).addEventListener("click", (event) => {
+                                evol_step = 0; update();
+                            });
+                            // 進化ボタンが存在する場合のみイベントリスナーを追加
+                            if (document.querySelector(`#evol2_${val.id}`)) { 
+                                document.querySelector(`#evol2_${val.id}`).addEventListener("click", (event) => {
+                                    evol_step = 1; update();
+                                });
+                            }
+                            if (document.querySelector(`#evol3_${val.id}`)) { 
+                                document.querySelector(`#evol3_${val.id}`).addEventListener("click", (event) => {
+                                    evol_step = 2; update();
+                                });
+                            }
+                            if (document.querySelector(`#evol4_${val.id}`)) { 
+                                document.querySelector(`#evol4_${val.id}`).addEventListener("click", (event) => {
+                                    evol_step = 3; update();
+                                });
+                            }
+                            // レベル入力フィールドのイベントリスナーを設定 [5, 13]
+                            document.querySelector(`#lv_input_${val.id}`).addEventListener("input", (event) => {
+                                lv = event.target.value; update();
+                            });
+                        }, 10);
+                    }
+                });
+            };
+
+            // 各種マスターデータを非同期で取得 [5, 6]
+            fetch(`https://app.nekodora.jp/masters/sync?model=c&hash=${hash}`, { credentials: "include" })
+                .then((res) => res.json())
+                .then((list) => {
+                    c = parse(list);
+                });
+
+            fetch(`https://app.nekodora.jp/masters/sync?model=s&hash=${hash}`, { credentials: "include" })
+                .then((res) => res.json())
+                .then((list) => {
+                    s = parse(list);
+                    console.log(s); // デバッグ用ログ [5]
+                });
+
+            fetch(`https://app.nekodora.jp/masters/sync?model=cs&hash=${hash}`, { credentials: "include" })
+                .then((res) => res.json())
+                .then((list) => {
+                    cs = parse(list);
+                });
+
+            fetch(`https://app.nekodora.jp/masters/sync?model=icon&hash=${hash}`, { credentials: "include" })
+                .then((res) => res.json())
+                .then((list) => {
+                    ic = parse(list);
+                });
+
+            fetch(`https://app.nekodora.jp/masters/sync?model=clc&hash=${hash}`, { credentials: "include" })
+                .then((res) => res.json())
+                .then((list) => {
+                    clc = parse(list);
+                });
+
+            // データパース関数 [6, 14]
+            const parse = (list) => {
+                let key_number = list;
+                let keys = list.slice(1, 1 + key_number);
+                let d = [];
+                let l2 = list.slice(1 + key_number);
+                for (let i = 0; i < l2.length; i++) {
+                    if (i % key_number == 0) {
+                        d.push({});
+                    }
+                    d[d.length - 1][keys[i % key_number]] = l2[i];
+                }
+                return d;
+            };
+
+            // カードIDからカードデータを取得 [2, 14]
+            const getCard = (id) => {
+                for (let i = 0; i < c.length; i++) {
+                    if (c[i].id == id) {
+                        return c[i];
+                    }
+                }
+            };
+
+            // スキルIDからスキルデータを取得 [2]
+            const getSkill = (id) => {
+                for (let i = 0; i < s.length; i++) {
+                    if (s[i].id == id) {
+                        return s[i];
+                    }
+                }
+            };
+
+            // カードIDからそのカードが持つスキルデータを取得 [2]
+            const getCardSkills = (card_id) => {
+                let skills = [];
+                for (let i = 0; i < cs.length; i++) {
+                    if (cs[i].card_id == card_id) {
+                        skills.push(getSkill(cs[i].skill_id));
+                    }
+                }
+                return skills;
+            };
+
+            // カードIDからそのカードの限界突破スキルデータを取得 [2, 3]
+            const getCardLimitbreakSkills = (card_id) => {
+                let skills = [];
+                for (let i = 0; i < clc.length; i++) {
+                    if (clc[i].evol_origin == card_id) {
+                        skills.push({
+                            step: clc[i].step,
+                            skill: getSkill(clc[i].skill_id)
+                        });
+                    }
+                }
+                return skills;
+            };
+
+            // アイコンIDから画像番号を取得 [3]
+            const getIconId = (icon_id) => {
+                for (let i = 0; i < ic.length; i++) {
+                    if (ic[i].id == icon_id) {
+                        return ic[i].image_number;
+                    }
+                }
+            };
+
+            // 初期表示で「オーブ検索機」タイトルを設定 [2]
+            sakusen2.innerHTML = test;
+
+            // カード名検索ボタンのクリックイベント [2, 3]
+            sakusen2_button.onclick = () => search(val => {
+                let text = sakusen2_text.value;
+                return val.label.match(text);
+            });
+
+            // スキル検索ボタンのクリックイベント [3, 15]
+            sakusen2_skill_button.onclick = () => search(val => {
+                let text = sakusen2_skill_text.value;
+                // コンマ区切りで複数の検索条件をサポート [3]
+                let regs = text.split(/,/g);
+                for (let i = 0; i < regs.length; i++) {
+                    regs[i] = regs[i].split(/=/g);
+                }
+                let evols = [val];
+                let skills = [];
+                getCardSkills(val.id).forEach((s) => {
+                    skills.push(s);
+                });
+                while (evols[evols.length - 1].evol_step < val.max_evol_step) {
+                    let next_card = getCard(evols[evols.length - 1].next_card_id);
+                    getCardSkills(next_card.id).forEach((s) => {
+                        skills.push(s);
+                    });
+                    evols.push(next_card);
+                }
+                getCardLimitbreakSkills(val.id).forEach((s) => {
+                    skills.push(s.skill);
+                });
+                skills.forEach((s) => {
+                    for (let i = 0; i < regs.length; i++) {
+                        let reg = regs[i];
+                        if (reg in s && s[reg] && s[reg].match(reg[1])) {
+                            regs.splice(i, 1);
+                            break;
+                        }
+                        if (!(reg in s) && (s.label.match(reg) || (s.text && s.text.match(reg)) || (s.tag && s.tag.match(reg)))) {
+                            regs.splice(i, 1);
+                            break;
+                        }
+                    }
+                });
+                return regs.length == 0;
+            });
+        })();
+    </script>
+
+</body>
+</html>
